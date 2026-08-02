@@ -47,14 +47,12 @@ const (
 var eventsURL = "https://api.github.com/users/%s/events"
 
 // FetchEvents fetches recent public events for a GitHub user.
-// It supports ETag-based caching: pass the previous ETag to avoid
-// re-downloading unchanged data (GitHub returns 304 Not Modified).
 func FetchEvents(username, etag string) ([]Event, string, error) {
 	url := fmt.Sprintf(eventsURL, username)
 
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to create request: %w", err)
+		return nil, "", &NetworkError{Msg: err.Error()}
 	}
 
 	req.Header.Set("Accept", "application/vnd.github+json")
@@ -64,7 +62,7 @@ func FetchEvents(username, etag string) ([]Event, string, error) {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to connect: %w", err)
+		return nil, "", &NetworkError{Msg: err.Error()}
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -74,23 +72,30 @@ func FetchEvents(username, etag string) ([]Event, string, error) {
 		return nil, newETag, nil
 	}
 
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, newETag, &NotFoundError{User: username}
+	}
+
+	if resp.StatusCode == http.StatusForbidden {
+		return nil, newETag, &RateLimitError{}
+	}
+
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		var errResp struct {
 			Message string `json:"message"`
 		}
 		if json.Unmarshal(body, &errResp) == nil && errResp.Message != "" {
-			return nil, newETag, fmt.Errorf("API error (%d): %s", resp.StatusCode, errResp.Message)
+			return nil, newETag, &InvalidJSONError{Msg: errResp.Message}
 		}
-		return nil, newETag, fmt.Errorf("unexpected status: %d", resp.StatusCode)
+		return nil, newETag, &InvalidJSONError{Msg: fmt.Sprintf("unexpected status: %d", resp.StatusCode)}
 	}
 
 	var events []Event
 	if err := json.NewDecoder(resp.Body).Decode(&events); err != nil {
-		return nil, newETag, fmt.Errorf("unexpected API response: %w", err)
+		return nil, newETag, &InvalidJSONError{Msg: err.Error()}
 	}
 
-	// Normalize: GitHub sometimes returns null for events
 	if events == nil {
 		events = []Event{}
 	}
@@ -99,7 +104,6 @@ func FetchEvents(username, etag string) ([]Event, string, error) {
 }
 
 // FilterEvents returns only events matching the given type.
-// If eventType is empty, all events are returned.
 func FilterEvents(events []Event, eventType string) []Event {
 	if eventType == "" {
 		return events
@@ -115,49 +119,61 @@ func FilterEvents(events []Event, eventType string) []Event {
 }
 
 // FormatEvent formats a single event into a human-readable string.
-// Format: "owner/repo: Verb details"
+// Format: "Verb ... in/to repo" per spec.
 func FormatEvent(event Event) string {
 	repo := event.Repo.Name
 
 	switch event.Type {
 	case EventPush:
-		return fmt.Sprintf("%s: Pushed commits", repo)
+		return formatPushEvent(event)
 	case EventIssues:
-		return formatActionVerb(event, "issue")
+		return formatActionEvent(event, "issue")
 	case EventIssueComment:
-		return fmt.Sprintf("%s: Commented on issue", repo)
+		return fmt.Sprintf("Commented on issue in %s", repo)
 	case EventWatch:
-		return fmt.Sprintf("%s: Starred", repo)
+		return fmt.Sprintf("Starred %s", repo)
 	case EventFork:
-		return fmt.Sprintf("%s: Forked", repo)
+		return fmt.Sprintf("Forked %s", repo)
 	case EventCreate:
 		return formatCreateEvent(event)
 	case EventDelete:
 		return formatDeleteEvent(event)
 	case EventPullRequest:
-		return formatActionVerb(event, "PR")
+		return formatActionEvent(event, "PR")
 	case EventPullRequestReview:
-		return fmt.Sprintf("%s: Reviewed PR", repo)
+		return fmt.Sprintf("Reviewed PR in %s", repo)
 	case EventPullRequestReviewComment:
-		return fmt.Sprintf("%s: Commented on PR", repo)
+		return fmt.Sprintf("Commented on PR in %s", repo)
 	case EventRelease:
 		return formatReleaseEvent(event)
 	case EventCommitComment:
-		return fmt.Sprintf("%s: Commented on commit", repo)
+		return fmt.Sprintf("Commented on commit in %s", repo)
 	case EventMember:
-		return fmt.Sprintf("%s: Added member", repo)
+		return fmt.Sprintf("Added member in %s", repo)
 	case EventGollum:
-		return fmt.Sprintf("%s: Updated wiki", repo)
+		return fmt.Sprintf("Updated wiki in %s", repo)
 	case EventPublic:
-		return fmt.Sprintf("%s: Made repo public", repo)
+		return fmt.Sprintf("Made %s public", repo)
 	case EventDiscussion:
-		return fmt.Sprintf("%s: Updated discussion", repo)
+		return fmt.Sprintf("Updated discussion in %s", repo)
 	default:
-		return fmt.Sprintf("%s: Did something", repo)
+		return fmt.Sprintf("Did something in %s", repo)
 	}
 }
 
-func formatActionVerb(event Event, noun string) string {
+func formatPushEvent(event Event) string {
+	var payload struct {
+		Commits []struct{} `json:"commits"`
+	}
+	_ = json.Unmarshal(event.Payload, &payload)
+	count := len(payload.Commits)
+	if count == 0 {
+		return fmt.Sprintf("Pushed commits to %s", event.Repo.Name)
+	}
+	return fmt.Sprintf("Pushed %d commits to %s", count, event.Repo.Name)
+}
+
+func formatActionEvent(event Event, noun string) string {
 	var payload struct {
 		Action string `json:"action"`
 	}
@@ -167,7 +183,11 @@ func formatActionVerb(event Event, noun string) string {
 	if action == "" {
 		action = "Updated"
 	}
-	return fmt.Sprintf("%s: %s %s", event.Repo.Name, action, noun)
+
+	if action == "Opened" {
+		return fmt.Sprintf("Opened a new %s in %s", noun, event.Repo.Name)
+	}
+	return fmt.Sprintf("%s %s in %s", action, noun, event.Repo.Name)
 }
 
 func formatCreateEvent(event Event) string {
@@ -179,13 +199,13 @@ func formatCreateEvent(event Event) string {
 
 	switch payload.RefType {
 	case "repository":
-		return fmt.Sprintf("%s: Created repo", event.Repo.Name)
+		return fmt.Sprintf("Created repo in %s", event.Repo.Name)
 	case "branch":
-		return fmt.Sprintf("%s: Created branch %s", event.Repo.Name, payload.Ref)
+		return fmt.Sprintf("Created branch %s in %s", payload.Ref, event.Repo.Name)
 	case "tag":
-		return fmt.Sprintf("%s: Created tag %s", event.Repo.Name, payload.Ref)
+		return fmt.Sprintf("Created tag %s in %s", payload.Ref, event.Repo.Name)
 	default:
-		return fmt.Sprintf("%s: Created %s", event.Repo.Name, payload.RefType)
+		return fmt.Sprintf("Created %s in %s", payload.RefType, event.Repo.Name)
 	}
 }
 
@@ -196,7 +216,7 @@ func formatDeleteEvent(event Event) string {
 	}
 	_ = json.Unmarshal(event.Payload, &payload)
 
-	return fmt.Sprintf("%s: Deleted %s %s", event.Repo.Name, payload.RefType, payload.Ref)
+	return fmt.Sprintf("Deleted %s %s in %s", payload.RefType, payload.Ref, event.Repo.Name)
 }
 
 func formatReleaseEvent(event Event) string {
@@ -212,11 +232,9 @@ func formatReleaseEvent(event Event) string {
 	if action == "" {
 		action = "Updated"
 	}
-	return fmt.Sprintf("%s: %s release %s", event.Repo.Name, action, payload.Release.TagName)
+	return fmt.Sprintf("%s release %s in %s", action, payload.Release.TagName, event.Repo.Name)
 }
 
-// capitalize returns s with the first letter uppercased.
-// Unlike strings.Title, this is simple and doesn't depend on deprecated API.
 func capitalize(s string) string {
 	if s == "" {
 		return s

@@ -33,9 +33,9 @@ github-activity kamranahmedse
 Output:
 
 ```
-kamranahmedse/developer-roadmap: Pushed commits
-kamranahmedse/developer-roadmap: Opened issue
-kamranahmedse/developer-roadmap: Starred
+Pushed 3 commits to kamranahmedse/developer-roadmap
+Opened a new issue in kamranahmedse/developer-roadmap
+Starred kamranahmedse/developer-roadmap
 ```
 
 ### Filter by event type

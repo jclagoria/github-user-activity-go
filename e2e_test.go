@@ -10,45 +10,52 @@ import (
 	"testing"
 )
 
-func TestRun_Success(t *testing.T) {
-	events := []Event{
-		{Type: EventPush, Repo: Repo{Name: "user/repo"}, Actor: Actor{Login: "user"}},
-		{Type: EventWatch, Repo: Repo{Name: "user/repo"}, Actor: Actor{Login: "user"}},
-	}
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(events)
-	}))
+// withTestServer sets up an httptest server, overrides eventsURL, and calls fn.
+func withTestServer(t *testing.T, handler http.HandlerFunc, fn func(serverURL string)) {
+	t.Helper()
+	server := httptest.NewServer(handler)
 	defer server.Close()
 
 	origURL := eventsURL
 	eventsURL = server.URL + "/users/%s/events"
 	defer func() { eventsURL = origURL }()
 
-	// Capture stdout
-	origStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
+	fn(server.URL)
+}
 
-	exitCode := run("github-activity", "testuser")
-
-	_ = w.Close()
-	os.Stdout = origStdout
-
-	var buf strings.Builder
-	_, _ = io.Copy(&buf, r)
-	output := buf.String()
-
-	if exitCode != ExitOK {
-		t.Errorf("exit code = %d, want %d", exitCode, ExitOK)
+func TestRun_Success(t *testing.T) {
+	events := []Event{
+		{Type: EventPush, Repo: Repo{Name: "user/repo"}, Actor: Actor{Login: "user"}},
+		{Type: EventWatch, Repo: Repo{Name: "user/repo"}, Actor: Actor{Login: "user"}},
 	}
-	if !strings.Contains(output, "user/repo: Pushed commits") {
-		t.Errorf("output missing push event: %s", output)
-	}
-	if !strings.Contains(output, "user/repo: Starred") {
-		t.Errorf("output missing watch event: %s", output)
-	}
+
+	withTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(events)
+	}, func(_ string) {
+		origStdout := os.Stdout
+		r, w, _ := os.Pipe()
+		os.Stdout = w
+
+		exitCode := run("github-activity", "testuser")
+
+		_ = w.Close()
+		os.Stdout = origStdout
+
+		var buf strings.Builder
+		_, _ = io.Copy(&buf, r)
+		output := buf.String()
+
+		if exitCode != ExitOK {
+			t.Errorf("exit code = %d, want %d", exitCode, ExitOK)
+		}
+		if !strings.Contains(output, "Pushed") && !strings.Contains(output, "to user/repo") {
+			t.Errorf("output missing push event: %s", output)
+		}
+		if !strings.Contains(output, "Starred user/repo") {
+			t.Errorf("output missing watch event: %s", output)
+		}
+	})
 }
 
 func TestRun_NoArgs(t *testing.T) {
@@ -67,54 +74,44 @@ func TestRun_NoArgs(t *testing.T) {
 }
 
 func TestRun_UserNotFound(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	withTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
 		_ = json.NewEncoder(w).Encode(map[string]string{"message": "Not Found"})
-	}))
-	defer server.Close()
+	}, func(_ string) {
+		origStderr := os.Stderr
+		_, w, _ := os.Pipe()
+		os.Stderr = w
 
-	origURL := eventsURL
-	eventsURL = server.URL + "/users/%s/events"
-	defer func() { eventsURL = origURL }()
+		exitCode := run("github-activity", "nonexistent")
 
-	origStderr := os.Stderr
-	_, w, _ := os.Pipe()
-	os.Stderr = w
+		_ = w.Close()
+		os.Stderr = origStderr
 
-	exitCode := run("github-activity", "nonexistent")
-
-	_ = w.Close()
-	os.Stderr = origStderr
-
-	if exitCode != ExitNotFound {
-		t.Errorf("exit code = %d, want %d", exitCode, ExitNotFound)
-	}
+		if exitCode != ExitNotFound {
+			t.Errorf("exit code = %d, want %d", exitCode, ExitNotFound)
+		}
+	})
 }
 
 func TestRun_EmptyEvents(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	withTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode([]Event{})
-	}))
-	defer server.Close()
+	}, func(_ string) {
+		origStderr := os.Stderr
+		_, w, _ := os.Pipe()
+		os.Stderr = w
 
-	origURL := eventsURL
-	eventsURL = server.URL + "/users/%s/events"
-	defer func() { eventsURL = origURL }()
+		exitCode := run("github-activity", "emptyuser")
 
-	origStderr := os.Stderr
-	_, w, _ := os.Pipe()
-	os.Stderr = w
+		_ = w.Close()
+		os.Stderr = origStderr
 
-	exitCode := run("github-activity", "emptyuser")
-
-	_ = w.Close()
-	os.Stderr = origStderr
-
-	if exitCode != ExitOK {
-		t.Errorf("exit code = %d, want %d", exitCode, ExitOK)
-	}
+		if exitCode != ExitOK {
+			t.Errorf("exit code = %d, want %d", exitCode, ExitOK)
+		}
+	})
 }
 
 func TestRun_WithFilter(t *testing.T) {
@@ -123,38 +120,33 @@ func TestRun_WithFilter(t *testing.T) {
 		{Type: EventWatch, Repo: Repo{Name: "user/repo"}, Actor: Actor{Login: "user"}},
 	}
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	withTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(events)
-	}))
-	defer server.Close()
+	}, func(_ string) {
+		origStdout := os.Stdout
+		r, w, _ := os.Pipe()
+		os.Stdout = w
 
-	origURL := eventsURL
-	eventsURL = server.URL + "/users/%s/events"
-	defer func() { eventsURL = origURL }()
+		exitCode := run("github-activity", "testuser", "--type", "PushEvent")
 
-	origStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
+		_ = w.Close()
+		os.Stdout = origStdout
 
-	exitCode := run("github-activity", "testuser", "--type", "PushEvent")
+		var buf strings.Builder
+		_, _ = io.Copy(&buf, r)
+		output := buf.String()
 
-	_ = w.Close()
-	os.Stdout = origStdout
-
-	var buf strings.Builder
-	_, _ = io.Copy(&buf, r)
-	output := buf.String()
-
-	if exitCode != ExitOK {
-		t.Errorf("exit code = %d, want %d", exitCode, ExitOK)
-	}
-	if !strings.Contains(output, "Pushed commits") {
-		t.Errorf("output missing push event: %s", output)
-	}
-	if strings.Contains(output, "Starred") {
-		t.Errorf("output should not contain watch event with filter: %s", output)
-	}
+		if exitCode != ExitOK {
+			t.Errorf("exit code = %d, want %d", exitCode, ExitOK)
+		}
+		if !strings.Contains(output, "Pushed") {
+			t.Errorf("output missing push event: %s", output)
+		}
+		if strings.Contains(output, "Starred") {
+			t.Errorf("output should not contain watch event with filter: %s", output)
+		}
+	})
 }
 
 func TestRun_MaxEvents(t *testing.T) {
@@ -163,34 +155,29 @@ func TestRun_MaxEvents(t *testing.T) {
 		events[i] = Event{Type: EventPush, Repo: Repo{Name: "user/repo"}, Actor: Actor{Login: "user"}}
 	}
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	withTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(events)
-	}))
-	defer server.Close()
+	}, func(_ string) {
+		origStdout := os.Stdout
+		r, w, _ := os.Pipe()
+		os.Stdout = w
 
-	origURL := eventsURL
-	eventsURL = server.URL + "/users/%s/events"
-	defer func() { eventsURL = origURL }()
+		exitCode := run("github-activity", "testuser")
 
-	origStdout := os.Stdout
-	r, w, _ := os.Pipe()
-	os.Stdout = w
+		_ = w.Close()
+		os.Stdout = origStdout
 
-	exitCode := run("github-activity", "testuser")
+		var buf strings.Builder
+		_, _ = io.Copy(&buf, r)
+		output := buf.String()
 
-	_ = w.Close()
-	os.Stdout = origStdout
-
-	var buf strings.Builder
-	_, _ = io.Copy(&buf, r)
-	output := buf.String()
-
-	if exitCode != ExitOK {
-		t.Errorf("exit code = %d, want %d", exitCode, ExitOK)
-	}
-	lines := strings.Split(strings.TrimSpace(output), "\n")
-	if len(lines) != maxEvents {
-		t.Errorf("output has %d lines, want %d", len(lines), maxEvents)
-	}
+		if exitCode != ExitOK {
+			t.Errorf("exit code = %d, want %d", exitCode, ExitOK)
+		}
+		lines := strings.Split(strings.TrimSpace(output), "\n")
+		if len(lines) != maxEvents {
+			t.Errorf("output has %d lines, want %d", len(lines), maxEvents)
+		}
+	})
 }

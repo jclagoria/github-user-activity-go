@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,7 +10,6 @@ import (
 
 const maxEvents = 10
 
-// ParseArgs extracts the username and optional --type filter from CLI arguments.
 func ParseArgs(args []string) (string, string, error) {
 	if len(args) < 2 {
 		return "", "", fmt.Errorf("usage: github-activity <username>")
@@ -25,7 +25,6 @@ func ParseArgs(args []string) (string, string, error) {
 		return "", "", fmt.Errorf("usage: github-activity <username> --type <EventType>")
 	}
 
-	// Ignore unknown flags, just return username
 	for i := 2; i < len(args); i++ {
 		if strings.HasPrefix(args[i], "--") {
 			return "", "", fmt.Errorf("unknown flag: %s", args[i])
@@ -49,24 +48,7 @@ func run(args ...string) int {
 	etag := loadETag(username)
 	events, newETag, err := FetchEvents(username, etag)
 	if err != nil {
-		msg := err.Error()
-		switch {
-		case strings.Contains(msg, "404"):
-			fmt.Fprintf(os.Stderr, MsgNotFound+"\n", username)
-			return ExitNotFound
-		case strings.Contains(msg, "403"):
-			fmt.Fprintln(os.Stderr, MsgRateLimit)
-			return ExitRateLimit
-		case strings.Contains(msg, "failed to connect"):
-			fmt.Fprintln(os.Stderr, MsgNetwork)
-			return ExitNetwork
-		case strings.Contains(msg, "unexpected"):
-			fmt.Fprintln(os.Stderr, MsgInvalidJSON)
-			return ExitInvalidJSON
-		default:
-			fmt.Fprintf(os.Stderr, "Error: %s\n", msg)
-			return 1
-		}
+		return handleFetchError(err, username)
 	}
 
 	if newETag != "" {
@@ -91,9 +73,33 @@ func run(args ...string) int {
 	return ExitOK
 }
 
+func handleFetchError(err error, username string) int {
+	var nf *NotFoundError
+	var rl *RateLimitError
+	var nw *NetworkError
+	var ij *InvalidJSONError
+
+	switch {
+	case errors.As(err, &nf):
+		fmt.Fprintf(os.Stderr, MsgNotFound+"\n", username)
+		return ExitNotFound
+	case errors.As(err, &rl):
+		fmt.Fprintln(os.Stderr, MsgRateLimit)
+		return ExitRateLimit
+	case errors.As(err, &nw):
+		fmt.Fprintln(os.Stderr, MsgNetwork)
+		return ExitNetwork
+	case errors.As(err, &ij):
+		fmt.Fprintln(os.Stderr, MsgInvalidJSON)
+		return ExitInvalidJSON
+	default:
+		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+		return 1
+	}
+}
+
 func etagPath(username string) string {
-	dir := os.TempDir()
-	return filepath.Join(dir, ".github-activity-"+username+".etag")
+	return filepath.Join(os.TempDir(), ".github-activity-"+username+".etag")
 }
 
 func loadETag(username string) string {
