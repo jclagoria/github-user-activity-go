@@ -105,5 +105,5 @@ func loadETag(username string) string {
 }
 
 func saveETag(username, etag string) {
-	os.WriteFile(etagPath(username), []byte(etag), 0600)
+	_ = os.WriteFile(etagPath(username), []byte(etag), 0600)
 }

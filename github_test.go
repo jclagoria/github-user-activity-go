@@ -19,7 +19,7 @@ func TestFetchEvents_Success(t *testing.T) {
 		}
 		w.Header().Set("ETag", `"abc123"`)
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(events)
+		_ = json.NewEncoder(w).Encode(events)
 	}))
 	defer server.Close()
 
@@ -69,7 +69,7 @@ func TestFetchEvents_UserNotFound(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(map[string]string{"message": "Not Found"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": "Not Found"})
 	}))
 	defer server.Close()
 
@@ -87,7 +87,7 @@ func TestFetchEvents_RateLimit(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusForbidden)
-		json.NewEncoder(w).Encode(map[string]string{"message": "API rate limit exceeded"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": "API rate limit exceeded"})
 	}))
 	defer server.Close()
 

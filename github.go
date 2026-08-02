@@ -66,7 +66,7 @@ func FetchEvents(username string, etag string) ([]Event, string, error) {
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to connect: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	newETag := resp.Header.Get("ETag")
 
@@ -161,9 +161,9 @@ func formatActionVerb(event Event, noun string) string {
 	var payload struct {
 		Action string `json:"action"`
 	}
-	json.Unmarshal(event.Payload, &payload)
+	_ = json.Unmarshal(event.Payload, &payload)
 
-	action := strings.Title(payload.Action)
+	action := capitalize(payload.Action)
 	if action == "" {
 		action = "Updated"
 	}
@@ -175,7 +175,7 @@ func formatCreateEvent(event Event) string {
 		RefType string `json:"ref_type"`
 		Ref     string `json:"ref"`
 	}
-	json.Unmarshal(event.Payload, &payload)
+	_ = json.Unmarshal(event.Payload, &payload)
 
 	switch payload.RefType {
 	case "repository":
@@ -194,7 +194,7 @@ func formatDeleteEvent(event Event) string {
 		RefType string `json:"ref_type"`
 		Ref     string `json:"ref"`
 	}
-	json.Unmarshal(event.Payload, &payload)
+	_ = json.Unmarshal(event.Payload, &payload)
 
 	return fmt.Sprintf("%s: Deleted %s %s", event.Repo.Name, payload.RefType, payload.Ref)
 }
@@ -203,9 +203,9 @@ func formatPREvent(event Event, noun string) string {
 	var payload struct {
 		Action string `json:"action"`
 	}
-	json.Unmarshal(event.Payload, &payload)
+	_ = json.Unmarshal(event.Payload, &payload)
 
-	action := strings.Title(payload.Action)
+	action := capitalize(payload.Action)
 	if action == "" {
 		action = "Updated"
 	}
@@ -219,11 +219,20 @@ func formatReleaseEvent(event Event) string {
 			TagName string `json:"tag_name"`
 		} `json:"release"`
 	}
-	json.Unmarshal(event.Payload, &payload)
+	_ = json.Unmarshal(event.Payload, &payload)
 
-	action := strings.Title(payload.Action)
+	action := capitalize(payload.Action)
 	if action == "" {
 		action = "Updated"
 	}
 	return fmt.Sprintf("%s: %s release %s", event.Repo.Name, action, payload.Release.TagName)
+}
+
+// capitalize returns s with the first letter uppercased.
+// Unlike strings.Title, this is simple and doesn't depend on deprecated API.
+func capitalize(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
 }

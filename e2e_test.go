@@ -18,7 +18,7 @@ func TestRun_Success(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(events)
+		_ = json.NewEncoder(w).Encode(events)
 	}))
 	defer server.Close()
 
@@ -33,11 +33,11 @@ func TestRun_Success(t *testing.T) {
 
 	exitCode := run("github-activity", "testuser")
 
-	w.Close()
+	_ = w.Close()
 	os.Stdout = origStdout
 
 	var buf strings.Builder
-	io.Copy(&buf, r)
+	_, _ = io.Copy(&buf, r)
 	output := buf.String()
 
 	if exitCode != ExitOK {
@@ -58,7 +58,7 @@ func TestRun_NoArgs(t *testing.T) {
 
 	exitCode := run("github-activity")
 
-	w.Close()
+	_ = w.Close()
 	os.Stderr = origStderr
 
 	if exitCode != ExitUsage {
@@ -70,7 +70,7 @@ func TestRun_UserNotFound(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
-		json.NewEncoder(w).Encode(map[string]string{"message": "Not Found"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"message": "Not Found"})
 	}))
 	defer server.Close()
 
@@ -84,7 +84,7 @@ func TestRun_UserNotFound(t *testing.T) {
 
 	exitCode := run("github-activity", "nonexistent")
 
-	w.Close()
+	_ = w.Close()
 	os.Stderr = origStderr
 
 	if exitCode != ExitNotFound {
@@ -95,7 +95,7 @@ func TestRun_UserNotFound(t *testing.T) {
 func TestRun_EmptyEvents(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode([]Event{})
+		_ = json.NewEncoder(w).Encode([]Event{})
 	}))
 	defer server.Close()
 
@@ -109,7 +109,7 @@ func TestRun_EmptyEvents(t *testing.T) {
 
 	exitCode := run("github-activity", "emptyuser")
 
-	w.Close()
+	_ = w.Close()
 	os.Stderr = origStderr
 
 	if exitCode != ExitOK {
@@ -125,7 +125,7 @@ func TestRun_WithFilter(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(events)
+		_ = json.NewEncoder(w).Encode(events)
 	}))
 	defer server.Close()
 
@@ -139,11 +139,11 @@ func TestRun_WithFilter(t *testing.T) {
 
 	exitCode := run("github-activity", "testuser", "--type", "PushEvent")
 
-	w.Close()
+	_ = w.Close()
 	os.Stdout = origStdout
 
 	var buf strings.Builder
-	io.Copy(&buf, r)
+	_, _ = io.Copy(&buf, r)
 	output := buf.String()
 
 	if exitCode != ExitOK {
@@ -165,7 +165,7 @@ func TestRun_MaxEvents(t *testing.T) {
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(events)
+		_ = json.NewEncoder(w).Encode(events)
 	}))
 	defer server.Close()
 
@@ -179,11 +179,11 @@ func TestRun_MaxEvents(t *testing.T) {
 
 	exitCode := run("github-activity", "testuser")
 
-	w.Close()
+	_ = w.Close()
 	os.Stdout = origStdout
 
 	var buf strings.Builder
-	io.Copy(&buf, r)
+	_, _ = io.Copy(&buf, r)
 	output := buf.String()
 
 	if exitCode != ExitOK {
