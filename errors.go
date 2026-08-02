@@ -1,14 +1,19 @@
 package main
 
+// errors.go defines exit codes, typed errors, and user-facing error messages
+// for the github-activity CLI. Typed errors (NotFoundError, RateLimitError, etc.)
+// are returned by FetchEvents and dispatched via errors.As in handleFetchError,
+// keeping error classification in one place instead of string matching.
+
 import "fmt"
 
 // Exit codes.
 const (
-	ExitOK       = 0
-	ExitUsage    = 1
-	ExitNotFound = 2
-	ExitRateLimit = 3
-	ExitNetwork  = 4
+	ExitOK          = 0
+	ExitUsage       = 1
+	ExitNotFound    = 2
+	ExitRateLimit   = 3
+	ExitNetwork     = 4
 	ExitInvalidJSON = 5
 )
 
@@ -16,7 +21,10 @@ const (
 type NotFoundError struct{ User string }
 type RateLimitError struct{}
 type NetworkError struct{ Msg string }
-type APIError struct{ Code int; Msg string }
+type APIError struct {
+	Code int
+	Msg  string
+}
 
 func (e *NotFoundError) Error() string  { return fmt.Sprintf("user '%s' not found", e.User) }
 func (e *RateLimitError) Error() string { return "API rate limit exceeded" }
@@ -25,10 +33,10 @@ func (e *APIError) Error() string       { return e.Msg }
 
 // Error messages written to stderr.
 var (
-	MsgUsage      = "Usage: github-activity <username>"
-	MsgNotFound   = "Error: user '%s' not found"
-	MsgRateLimit  = "Error: API rate limit exceeded. Try again later."
-	MsgNetwork    = "Error: failed to connect. Check your internet."
+	MsgUsage       = "Usage: github-activity <username>"
+	MsgNotFound    = "Error: user '%s' not found"
+	MsgRateLimit   = "Error: API rate limit exceeded. Try again later."
+	MsgNetwork     = "Error: failed to connect. Check your internet."
 	MsgInvalidJSON = "Error: unexpected API response"
-	MsgNoActivity = "No recent activity for '%s'"
+	MsgNoActivity  = "No recent activity for '%s'"
 )
