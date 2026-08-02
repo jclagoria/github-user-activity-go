@@ -1,0 +1,13 @@
+# Build output
+github-user-activity
+
+# Editor/IDE
+.vscode/
+
+# Agent files
+.agents/
+AGENTS.md
+skills-lock.json
+
+# Spec (tracked separately or via Linear)
+GitHub-User-Activity.md
