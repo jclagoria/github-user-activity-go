@@ -49,7 +49,7 @@ var eventsURL = "https://api.github.com/users/%s/events"
 // FetchEvents fetches recent public events for a GitHub user.
 // It supports ETag-based caching: pass the previous ETag to avoid
 // re-downloading unchanged data (GitHub returns 304 Not Modified).
-func FetchEvents(username string, etag string) ([]Event, string, error) {
+func FetchEvents(username, etag string) ([]Event, string, error) {
 	url := fmt.Sprintf(eventsURL, username)
 
 	req, err := http.NewRequest("GET", url, nil)
@@ -135,7 +135,7 @@ func FormatEvent(event Event) string {
 	case EventDelete:
 		return formatDeleteEvent(event)
 	case EventPullRequest:
-		return formatPREvent(event, "PR")
+		return formatActionVerb(event, "PR")
 	case EventPullRequestReview:
 		return fmt.Sprintf("%s: Reviewed PR", repo)
 	case EventPullRequestReviewComment:
@@ -197,19 +197,6 @@ func formatDeleteEvent(event Event) string {
 	_ = json.Unmarshal(event.Payload, &payload)
 
 	return fmt.Sprintf("%s: Deleted %s %s", event.Repo.Name, payload.RefType, payload.Ref)
-}
-
-func formatPREvent(event Event, noun string) string {
-	var payload struct {
-		Action string `json:"action"`
-	}
-	_ = json.Unmarshal(event.Payload, &payload)
-
-	action := capitalize(payload.Action)
-	if action == "" {
-		action = "Updated"
-	}
-	return fmt.Sprintf("%s: %s %s", event.Repo.Name, action, noun)
 }
 
 func formatReleaseEvent(event Event) string {
