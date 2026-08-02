@@ -77,7 +77,7 @@ func handleFetchError(err error, username string) int {
 	var nf *NotFoundError
 	var rl *RateLimitError
 	var nw *NetworkError
-	var ij *InvalidJSONError
+	var ae *APIError
 
 	switch {
 	case errors.As(err, &nf):
@@ -89,7 +89,7 @@ func handleFetchError(err error, username string) int {
 	case errors.As(err, &nw):
 		fmt.Fprintln(os.Stderr, MsgNetwork)
 		return ExitNetwork
-	case errors.As(err, &ij):
+	case errors.As(err, &ae):
 		fmt.Fprintln(os.Stderr, MsgInvalidJSON)
 		return ExitInvalidJSON
 	default:

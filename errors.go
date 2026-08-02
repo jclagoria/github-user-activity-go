@@ -16,12 +16,12 @@ const (
 type NotFoundError struct{ User string }
 type RateLimitError struct{}
 type NetworkError struct{ Msg string }
-type InvalidJSONError struct{ Msg string }
+type APIError struct{ Code int; Msg string }
 
 func (e *NotFoundError) Error() string  { return fmt.Sprintf("user '%s' not found", e.User) }
 func (e *RateLimitError) Error() string { return "API rate limit exceeded" }
 func (e *NetworkError) Error() string   { return e.Msg }
-func (e *InvalidJSONError) Error() string { return e.Msg }
+func (e *APIError) Error() string       { return e.Msg }
 
 // Error messages written to stderr.
 var (

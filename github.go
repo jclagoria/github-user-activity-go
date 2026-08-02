@@ -86,14 +86,14 @@ func FetchEvents(username, etag string) ([]Event, string, error) {
 			Message string `json:"message"`
 		}
 		if json.Unmarshal(body, &errResp) == nil && errResp.Message != "" {
-			return nil, newETag, &InvalidJSONError{Msg: errResp.Message}
+			return nil, newETag, &APIError{Code: resp.StatusCode, Msg: errResp.Message}
 		}
-		return nil, newETag, &InvalidJSONError{Msg: fmt.Sprintf("unexpected status: %d", resp.StatusCode)}
+		return nil, newETag, &APIError{Code: resp.StatusCode, Msg: fmt.Sprintf("unexpected status: %d", resp.StatusCode)}
 	}
 
 	var events []Event
 	if err := json.NewDecoder(resp.Body).Decode(&events); err != nil {
-		return nil, newETag, &InvalidJSONError{Msg: err.Error()}
+		return nil, newETag, &APIError{Code: resp.StatusCode, Msg: err.Error()}
 	}
 
 	if events == nil {

@@ -23,6 +23,36 @@ func withTestServer(t *testing.T, handler http.HandlerFunc, fn func(serverURL st
 	fn(server.URL)
 }
 
+// captureStdout runs fn while capturing stdout, returns the captured output.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	orig := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+
+	fn()
+
+	_ = w.Close()
+	os.Stdout = orig
+
+	var buf strings.Builder
+	_, _ = io.Copy(&buf, r)
+	return buf.String()
+}
+
+// suppressStderr runs fn while suppressing stderr output.
+func suppressStderr(t *testing.T, fn func()) {
+	t.Helper()
+	orig := os.Stderr
+	_, w, _ := os.Pipe()
+	os.Stderr = w
+
+	fn()
+
+	_ = w.Close()
+	os.Stderr = orig
+}
+
 func TestRun_Success(t *testing.T) {
 	events := []Event{
 		{Type: EventPush, Repo: Repo{Name: "user/repo"}, Actor: Actor{Login: "user"}},
@@ -33,22 +63,12 @@ func TestRun_Success(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(events)
 	}, func(_ string) {
-		origStdout := os.Stdout
-		r, w, _ := os.Pipe()
-		os.Stdout = w
-
-		exitCode := run("github-activity", "testuser")
-
-		_ = w.Close()
-		os.Stdout = origStdout
-
-		var buf strings.Builder
-		_, _ = io.Copy(&buf, r)
-		output := buf.String()
-
-		if exitCode != ExitOK {
-			t.Errorf("exit code = %d, want %d", exitCode, ExitOK)
-		}
+		output := captureStdout(t, func() {
+			exitCode := run("github-activity", "testuser")
+			if exitCode != ExitOK {
+				t.Errorf("exit code = %d, want %d", exitCode, ExitOK)
+			}
+		})
 		if !strings.Contains(output, "Pushed") && !strings.Contains(output, "to user/repo") {
 			t.Errorf("output missing push event: %s", output)
 		}
@@ -59,18 +79,12 @@ func TestRun_Success(t *testing.T) {
 }
 
 func TestRun_NoArgs(t *testing.T) {
-	origStderr := os.Stderr
-	_, w, _ := os.Pipe()
-	os.Stderr = w
-
-	exitCode := run("github-activity")
-
-	_ = w.Close()
-	os.Stderr = origStderr
-
-	if exitCode != ExitUsage {
-		t.Errorf("exit code = %d, want %d", exitCode, ExitUsage)
-	}
+	suppressStderr(t, func() {
+		exitCode := run("github-activity")
+		if exitCode != ExitUsage {
+			t.Errorf("exit code = %d, want %d", exitCode, ExitUsage)
+		}
+	})
 }
 
 func TestRun_UserNotFound(t *testing.T) {
@@ -79,18 +93,12 @@ func TestRun_UserNotFound(t *testing.T) {
 		w.WriteHeader(http.StatusNotFound)
 		_ = json.NewEncoder(w).Encode(map[string]string{"message": "Not Found"})
 	}, func(_ string) {
-		origStderr := os.Stderr
-		_, w, _ := os.Pipe()
-		os.Stderr = w
-
-		exitCode := run("github-activity", "nonexistent")
-
-		_ = w.Close()
-		os.Stderr = origStderr
-
-		if exitCode != ExitNotFound {
-			t.Errorf("exit code = %d, want %d", exitCode, ExitNotFound)
-		}
+		suppressStderr(t, func() {
+			exitCode := run("github-activity", "nonexistent")
+			if exitCode != ExitNotFound {
+				t.Errorf("exit code = %d, want %d", exitCode, ExitNotFound)
+			}
+		})
 	})
 }
 
@@ -99,18 +107,12 @@ func TestRun_EmptyEvents(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode([]Event{})
 	}, func(_ string) {
-		origStderr := os.Stderr
-		_, w, _ := os.Pipe()
-		os.Stderr = w
-
-		exitCode := run("github-activity", "emptyuser")
-
-		_ = w.Close()
-		os.Stderr = origStderr
-
-		if exitCode != ExitOK {
-			t.Errorf("exit code = %d, want %d", exitCode, ExitOK)
-		}
+		suppressStderr(t, func() {
+			exitCode := run("github-activity", "emptyuser")
+			if exitCode != ExitOK {
+				t.Errorf("exit code = %d, want %d", exitCode, ExitOK)
+			}
+		})
 	})
 }
 
@@ -124,22 +126,12 @@ func TestRun_WithFilter(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(events)
 	}, func(_ string) {
-		origStdout := os.Stdout
-		r, w, _ := os.Pipe()
-		os.Stdout = w
-
-		exitCode := run("github-activity", "testuser", "--type", "PushEvent")
-
-		_ = w.Close()
-		os.Stdout = origStdout
-
-		var buf strings.Builder
-		_, _ = io.Copy(&buf, r)
-		output := buf.String()
-
-		if exitCode != ExitOK {
-			t.Errorf("exit code = %d, want %d", exitCode, ExitOK)
-		}
+		output := captureStdout(t, func() {
+			exitCode := run("github-activity", "testuser", "--type", "PushEvent")
+			if exitCode != ExitOK {
+				t.Errorf("exit code = %d, want %d", exitCode, ExitOK)
+			}
+		})
 		if !strings.Contains(output, "Pushed") {
 			t.Errorf("output missing push event: %s", output)
 		}
@@ -159,22 +151,12 @@ func TestRun_MaxEvents(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(events)
 	}, func(_ string) {
-		origStdout := os.Stdout
-		r, w, _ := os.Pipe()
-		os.Stdout = w
-
-		exitCode := run("github-activity", "testuser")
-
-		_ = w.Close()
-		os.Stdout = origStdout
-
-		var buf strings.Builder
-		_, _ = io.Copy(&buf, r)
-		output := buf.String()
-
-		if exitCode != ExitOK {
-			t.Errorf("exit code = %d, want %d", exitCode, ExitOK)
-		}
+		output := captureStdout(t, func() {
+			exitCode := run("github-activity", "testuser")
+			if exitCode != ExitOK {
+				t.Errorf("exit code = %d, want %d", exitCode, ExitOK)
+			}
+		})
 		lines := strings.Split(strings.TrimSpace(output), "\n")
 		if len(lines) != maxEvents {
 			t.Errorf("output has %d lines, want %d", len(lines), maxEvents)
